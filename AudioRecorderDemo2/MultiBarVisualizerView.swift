@@ -24,38 +24,51 @@ struct MultiBarVisualizerView: View {
     
     var body: some View {
         GeometryReader { geo in
-            // Calculate sizes and spacing for bars.
-            let width = geo.size.width
-            let height = geo.size.height
+            // Calculate sizes and spacing for bars with safe clamping.
+            let rawWidth = geo.size.width
+            let rawHeight = geo.size.height
+            let width = rawWidth.isFinite ? max(0, rawWidth) : 0
+            let height = rawHeight.isFinite ? max(0, rawHeight) : 0
+
+            // Ensure we never divide by zero and spacing doesn't make width negative.
+            let safeBarCount = max(1, barCount)
             let barSpacing: CGFloat = 1
-            let barWidth = (width - CGFloat(barCount - 1) * barSpacing) / CGFloat(barCount)
-            
+            let totalSpacing = CGFloat(safeBarCount - 1) * barSpacing
+            let availableWidth = max(0, width - totalSpacing)
+            let barWidth = availableWidth / CGFloat(safeBarCount)
+
             // Group meter values into chunks to average for each bar.
-            let chunkSize = max(1, values.count / barCount)
-            
+            let chunkSize = max(1, values.count / safeBarCount)
+
             // Compute average value per bar segment to smooth the waveform.
-            let barValues: [Float] = (0..<barCount).map { i in
+            let barValues: [Float] = (0..<safeBarCount).map { i in
                 let start = i * chunkSize
                 let end = min(start + chunkSize, values.count)
                 if start >= end { return 0 }
                 let slice = values[start..<end]
                 return slice.reduce(0, +) / Float(slice.count)
             }
-            
+
             HStack(alignment: .center, spacing: barSpacing) {
-                ForEach(barValues.indices, id: \.self) { i in
+                ForEach(0..<safeBarCount, id: \.self) { i in
                     // Draw each bar with a minimum height for visibility.
-                    let v = CGFloat(barValues[i])
+                    let base = CGFloat(barValues[i])
+                    let v = base.isFinite ? base : 0
                     let capped = max(0.07, min(v, 1)) // Ensure thin min bar to see quiet sections.
+                    let barHeight = max(0, min(height, capped * height))
+                    let safeBarWidth = max(0, barWidth)
+                    let yOffset = (height - barHeight) / 2
+
                     Rectangle()
                         .fill(Color.primary.opacity(0.85))
-                        .frame(width: barWidth, height: capped * height)
-                        .cornerRadius(barWidth / 2)
+                        .frame(width: safeBarWidth, height: barHeight)
+                        .cornerRadius(safeBarWidth / 2)
                         .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
                         // Vertically center the bar within the available height.
-                        .offset(y: (height - capped * height) / 2)
+                        .offset(y: yOffset)
                 }
             }
         }
     }
 }
+
